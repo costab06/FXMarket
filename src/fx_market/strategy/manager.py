@@ -21,11 +21,16 @@ logger = logging.getLogger(__name__)
 
 _EXAMPLE_STRATEGY = '''\
 """
-EWMA Crossover Strategy
------------------------
+EWMA Crossover Strategy (tick-based)
+-------------------------------------
 Buys when the fast EWMA crosses above the slow EWMA, sells when it crosses
 below.  Uses 24 hours of Dukascopy tick history as warmup so the EWMA is
 fully initialised before the first live tick arrives.
+
+NOTE: tau values here are in TICKS, not time.  FX tick arrival rate varies
+enormously — from ~5/s during the London/NY overlap to <1/s overnight — so
+tau=50 means anything from 10 seconds to over a minute depending on the time
+of day.  See ewma_cross_theta.py for a version that corrects for this.
 
 warmup_hours = 24  ->  the runner pre-loads ~24 h of ticks from Dukascopy
                        into the history buffer before starting to trade.
@@ -64,6 +69,99 @@ class EWMACross(StrategyBase):
             return "buy"
 
         # Crossunder: fast falls below slow -> sell
+        if fast[-2] >= slow[-2] and fast[-1] < slow[-1]:
+            return "sell"
+
+        return None
+'''
+
+_EXAMPLE_STRATEGY_THETA = '''\
+"""
+EWMA Crossover Strategy (theta-time bars)
+------------------------------------------
+Same EWMA crossover logic as ewma_cross.py, but operating on *business-time
+bars* rather than raw ticks.  This is the theoretically correct way to apply
+the strategy.
+
+Why raw ticks are problematic
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+FX tick arrival is highly uneven: EURUSD sees ~5 ticks/s during the
+London/NY overlap (08:00-17:00 UTC) but fewer than 1/s overnight.  When
+EWMA is applied directly to raw ticks, tau=50 can mean 10 seconds at the
+open and 2 minutes at 3 AM — the strategy behaves very differently at
+different times of day without any intentional change.
+
+What theta time fixes
+~~~~~~~~~~~~~~~~~~~~~~
+Dacorogna et al. (2001) introduced "theta time" (business time): a
+monotone transformation ψ(t) that stretches quiet periods and compresses
+active ones so that each unit of theta time contains equal expected market
+activity.  The transformation is driven by a seasonal factor that models
+the well-known intraday U-shape (peaks at the London open and the
+London/NY overlap) and the day-of-week pattern (quieter Mondays and
+Fridays).
+
+After transforming to theta time and resampling to fixed-size bars, the
+bar series has approximately stationary volatility regardless of time of
+day.  tau values in the EWMA now correspond to a consistent number of
+"average-activity-seconds", not a variable number of ticks.
+
+Concretely:
+    freq_seconds = 60   -> one bar per 60 avg-activity-seconds
+    tau = 20 (fast)     -> 20-bar decay ~ 20 minutes of average activity
+    tau = 200 (slow)    -> 200-bar decay ~ 3.3 hours of average activity
+
+warmup_hours = 48  ->  48 h of tick history so the bar series is long
+                       enough for the slow EWMA to be well-initialised.
+max_history  = 20_000 -> enough ticks to cover ~48 h for most pairs.
+"""
+import numpy as np
+
+from fx_market.strategy import StrategyBase, StrategyContext
+from fx_market.hff import ewma_from_tau, log_returns, ewma_volatility
+from fx_market.hff.time_transform import seasonal_factor, theta_time
+from fx_market.hff.data import sample_regular
+
+# Bar width in "average-activity-seconds"
+BAR_SECONDS = 60
+# Minimum bars needed before trading
+MIN_BARS = 300
+
+
+class EWMACrossTheta(StrategyBase):
+    warmup_hours = 48
+    max_history  = 20_000
+
+    def on_tick(self, ctx: StrategyContext):
+        if len(ctx.mid) < 500:
+            return None
+
+        # Convert datetime timestamps to unix seconds (float array)
+        unix = np.array([t.timestamp() for t in ctx.timestamps])
+
+        # Build theta-time axis: each unit = one average-activity-second
+        sf    = seasonal_factor(unix)
+        theta = theta_time(unix, sf)
+
+        # Resample mid prices onto a uniform theta-time grid
+        bars, _ = sample_regular(ctx.mid, theta, freq_seconds=BAR_SECONDS)
+
+        if len(bars) < MIN_BARS:
+            return None
+
+        # EWMA crossover on theta-time bars (tau is now in bars = avg-activity-minutes)
+        fast = ewma_from_tau(bars, tau=20)    # ~20 min of average activity
+        slow = ewma_from_tau(bars, tau=200)   # ~3.3 h of average activity
+
+        # Volatility filter on bar returns
+        r   = log_returns(bars[-100:])
+        vol = ewma_volatility(r, tau=20, dt=1.0)
+        if vol[-1] > 0.10:
+            return None
+
+        # Crossover signals
+        if fast[-2] <= slow[-2] and fast[-1] > slow[-1]:
+            return "buy"
         if fast[-2] >= slow[-2] and fast[-1] < slow[-1]:
             return "sell"
 
@@ -212,6 +310,11 @@ class StrategyManager:
         if not example.exists():
             example.write_text(_EXAMPLE_STRATEGY)
             logger.info("Created example strategy: ewma_cross.py")
+
+        example_theta = self._dir / "ewma_cross_theta.py"
+        if not example_theta.exists():
+            example_theta.write_text(_EXAMPLE_STRATEGY_THETA)
+            logger.info("Created example strategy: ewma_cross_theta.py")
 
 
 def _validate_name(name: str) -> None:
