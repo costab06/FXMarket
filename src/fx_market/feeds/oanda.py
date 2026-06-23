@@ -28,9 +28,9 @@ logger = logging.getLogger(__name__)
 UTC = timezone.utc
 
 _BASE_URLS = {
-    "practice": "https://api-fxtrade.oanda.com",
+    "practice": "https://api-fxpractice.oanda.com",
     "live":     "https://api-fxtrade.oanda.com",
-    "stream_practice": "https://stream-fxtrade.oanda.com",
+    "stream_practice": "https://stream-fxpractice.oanda.com",
     "stream_live":     "https://stream-fxtrade.oanda.com",
 }
 

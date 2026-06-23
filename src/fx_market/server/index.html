@@ -1,0 +1,1482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>FX Market</title>
+<style>
+:root {
+  --bg:      #0d1117;
+  --surface: #161b22;
+  --border:  #30363d;
+  --text:    #e6edf3;
+  --muted:   #8b949e;
+  --green:   #3fb950;
+  --red:     #f85149;
+  --blue:    #58a6ff;
+  --yellow:  #d29922;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: 'Consolas', 'Courier New', monospace; font-size: 13px; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+/* ── Header ── */
+header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 16px;
+  display: flex;
+  align-items: stretch;
+  flex-shrink: 0;
+  gap: 0;
+}
+header h1 { font-size: 14px; font-weight: 700; letter-spacing: 1px; color: var(--blue); padding: 10px 16px 10px 0; border-right: 1px solid var(--border); margin-right: 4px; }
+#conn-badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: var(--border); color: var(--muted); align-self: center; margin-right: auto; }
+#conn-badge.connected { background: #1a3a24; color: var(--green); }
+
+/* ── Tabs ── */
+.tab-btn {
+  padding: 0 18px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.tab-btn.active { color: var(--text); border-bottom-color: var(--blue); }
+.tab-btn:hover:not(.active) { color: var(--text); }
+
+/* ── Tab content ── */
+.tab-content { display: none; flex: 1; overflow: hidden; }
+.tab-content.active { display: flex; flex-direction: column; }
+
+/* ── Market tab layout ── */
+.market-layout {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  flex: 1;
+  overflow: hidden;
+}
+.main-col { display: flex; flex-direction: column; overflow: hidden; border-right: 1px solid var(--border); }
+.ticket-col { display: flex; flex-direction: column; overflow-y: auto; }
+
+/* ── Cards ── */
+.card { background: var(--surface); border-bottom: 1px solid var(--border); }
+.card-title { padding: 7px 14px; font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; border-bottom: 1px solid var(--border); }
+
+/* ── Tables ── */
+table { width: 100%; border-collapse: collapse; }
+th { padding: 6px 14px; text-align: right; font-size: 11px; color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--border); }
+th:first-child { text-align: left; }
+td { padding: 8px 14px; text-align: right; border-bottom: 1px solid #1c2128; }
+td:first-child { text-align: left; }
+tr:last-child td { border-bottom: none; }
+.pair-row { cursor: pointer; }
+.pair-row:hover td { background: #1c2128; }
+.pair-row.selected td { background: #1a2840; }
+
+.bid-cell { color: var(--red); font-weight: 600; font-size: 14px; }
+.ask-cell { color: var(--green); font-weight: 600; font-size: 14px; }
+.spread-cell, .age-cell { color: var(--muted); }
+.age-cell { font-size: 11px; }
+
+@keyframes flashGreen { 0%,100%{background:transparent} 40%{background:#1a3a24} }
+@keyframes flashRed   { 0%,100%{background:transparent} 40%{background:#3a1a1a} }
+.flash-up   { animation: flashGreen 0.5s; }
+.flash-down { animation: flashRed   0.5s; }
+
+/* ── Bottom panels ── */
+.bottom-row { display: grid; grid-template-columns: 1fr 1fr; flex: 1; overflow: hidden; }
+.panel { display: flex; flex-direction: column; overflow: hidden; }
+.panel:first-child { border-right: 1px solid var(--border); }
+.panel-body { overflow-y: auto; flex: 1; }
+.empty-msg { padding: 16px; text-align: center; color: var(--muted); }
+.pos-long { color: var(--green); }
+.pos-short { color: var(--red); }
+.pnl-pos { color: var(--green); }
+.pnl-neg { color: var(--red); }
+.side-buy { color: var(--green); }
+.side-sell { color: var(--red); }
+.status-filled { color: var(--green); }
+.status-rejected { color: var(--red); }
+
+/* ── Order ticket ── */
+.ticket { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.field label { font-size: 10px; color: var(--muted); display: block; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+.field select, .field input[type=number] {
+  width: 100%; background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); padding: 7px 10px; border-radius: 4px;
+  font-family: inherit; font-size: 13px;
+}
+.field select:focus, .field input[type=number]:focus { outline: none; border-color: var(--blue); }
+.side-toggle { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.side-btn { padding: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--muted); border-radius: 4px; cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 700; }
+.side-btn.buy.active  { background: #1a3a24; border-color: var(--green); color: var(--green); }
+.side-btn.sell.active { background: #3a1a1a; border-color: var(--red);   color: var(--red); }
+.price-preview { text-align: center; font-size: 12px; color: var(--muted); padding: 6px; background: var(--bg); border-radius: 4px; border: 1px solid var(--border); min-height: 34px; }
+.preview-price { font-size: 16px; font-weight: 700; }
+.preview-buy  { color: var(--green); }
+.preview-sell { color: var(--red); }
+.submit-btn { padding: 11px; border: none; border-radius: 4px; cursor: pointer; font-family: inherit; font-size: 14px; font-weight: 700; width: 100%; }
+.submit-btn:disabled { opacity: 0.4; cursor: default; }
+.submit-btn.buy  { background: var(--green); color: #000; }
+.submit-btn.sell { background: var(--red);   color: #fff; }
+#order-result { padding: 8px 10px; border-radius: 4px; font-size: 12px; display: none; }
+#order-result.success { background: #1a3a24; color: var(--green); }
+#order-result.error   { background: #3a1a1a; color: var(--red); }
+
+/* ── Strategy tab layout ── */
+.strat-layout {
+  display: grid;
+  grid-template-columns: 240px 1fr 280px;
+  flex: 1;
+  overflow: hidden;
+}
+.strat-sidebar {
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.strat-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.strat-sidebar-header span { font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; }
+.icon-btn { background: transparent; border: 1px solid var(--border); color: var(--muted); border-radius: 4px; padding: 2px 8px; cursor: pointer; font-family: inherit; font-size: 12px; }
+.icon-btn:hover { color: var(--text); border-color: var(--text); }
+
+.strat-list { overflow-y: auto; flex: 1; }
+.strat-item {
+  padding: 9px 12px;
+  border-bottom: 1px solid #1c2128;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.strat-item:hover { background: #1c2128; }
+.strat-item.selected { background: #1a2840; }
+.strat-item-name { font-weight: 600; font-size: 13px; }
+.strat-item-meta { font-size: 11px; color: var(--muted); display: flex; gap: 8px; }
+.badge-running { color: var(--green); }
+.badge-stopped { color: var(--muted); }
+
+.strat-editor-col {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-right: 1px solid var(--border);
+}
+.strat-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+.strat-name-input {
+  background: var(--bg); border: 1px solid var(--border); color: var(--text);
+  padding: 4px 8px; border-radius: 4px; font-family: inherit; font-size: 13px; width: 160px;
+}
+.strat-name-input:focus { outline: none; border-color: var(--blue); }
+.toolbar-btn {
+  padding: 4px 12px; border: 1px solid var(--border); background: var(--bg);
+  color: var(--text); border-radius: 4px; cursor: pointer; font-family: inherit; font-size: 12px;
+}
+.toolbar-btn:hover { border-color: var(--blue); color: var(--blue); }
+.toolbar-btn.start { border-color: var(--green); color: var(--green); }
+.toolbar-btn.start:hover { background: #1a3a24; }
+.toolbar-btn.stop  { border-color: var(--red); color: var(--red); }
+.toolbar-btn.stop:hover  { background: #3a1a1a; }
+.toolbar-btn.delete { border-color: var(--border); color: var(--muted); }
+.toolbar-btn.delete:hover { border-color: var(--red); color: var(--red); }
+.strat-status-badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; margin-left: auto; }
+.strat-status-badge.running { background: #1a3a24; color: var(--green); }
+.strat-status-badge.stopped { background: var(--border); color: var(--muted); }
+#strat-save-msg { font-size: 11px; color: var(--green); }
+
+#editor-container { flex: 1; overflow: hidden; }
+
+.strat-log-col { display: flex; flex-direction: column; overflow: hidden; }
+.strat-log-body { flex: 1; overflow-y: auto; padding: 8px; font-size: 11px; line-height: 1.7; }
+.strat-log-body .log-line { white-space: pre-wrap; word-break: break-all; color: var(--muted); }
+.strat-log-body .log-line.signal { color: var(--yellow); }
+.strat-log-body .log-line.fill   { color: var(--green); }
+.strat-log-body .log-line.error  { color: var(--red); }
+.strat-log-body .log-line.info   { color: var(--text); }
+
+.no-strategy-msg {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  color: var(--muted); font-size: 14px;
+}
+
+/* ── Library tab ── */
+.lib-layout {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  flex: 1;
+  overflow: hidden;
+}
+.lib-sidebar {
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface);
+}
+.lib-search-wrap { padding: 8px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+#lib-search {
+  width: 100%; background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); padding: 5px 8px; border-radius: 4px;
+  font-family: inherit; font-size: 12px;
+}
+#lib-search:focus { outline: none; border-color: var(--blue); }
+.lib-tree { overflow-y: auto; flex: 1; padding: 4px 0; }
+.lib-group { margin-bottom: 4px; }
+.lib-group-header {
+  padding: 5px 10px; font-size: 10px; font-weight: 700; color: var(--blue);
+  text-transform: uppercase; letter-spacing: 0.8px; cursor: pointer;
+  display: flex; align-items: center; gap: 4px;
+}
+.lib-group-header:hover { color: var(--text); }
+.lib-mod-header {
+  padding: 4px 10px 4px 20px; font-size: 12px; color: var(--muted);
+  cursor: pointer; display: flex; align-items: center; gap: 4px;
+}
+.lib-mod-header:hover { color: var(--text); background: #1c2128; }
+.lib-mod-header.active { color: var(--text); }
+.lib-fn-list { display: none; }
+.lib-fn-list.open { display: block; }
+.lib-fn-item {
+  padding: 3px 10px 3px 32px; font-size: 11px; color: var(--muted);
+  cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.lib-fn-item:hover { color: var(--text); background: #1c2128; }
+.lib-fn-item.selected { color: var(--blue); background: #1a2840; }
+
+.lib-detail {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.lib-detail-inner { overflow-y: auto; flex: 1; padding: 20px 28px; }
+.lib-placeholder { color: var(--muted); margin-top: 60px; text-align: center; }
+
+.fn-signature {
+  font-family: 'Consolas', monospace;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--blue);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  word-break: break-all;
+}
+.fn-import {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.fn-import code { color: var(--green); }
+.fn-copy-btn {
+  font-size: 11px; padding: 3px 10px; border: 1px solid var(--border);
+  background: var(--bg); color: var(--muted); border-radius: 4px; cursor: pointer;
+  font-family: inherit; margin-left: 8px;
+}
+.fn-copy-btn:hover { color: var(--text); border-color: var(--text); }
+.fn-use-btn {
+  font-size: 11px; padding: 3px 10px; border: 1px solid var(--border);
+  background: var(--bg); color: var(--blue); border-radius: 4px; cursor: pointer;
+  font-family: inherit; margin-left: 4px;
+}
+.fn-use-btn:hover { background: #1a2840; }
+
+.doc-section { margin-top: 16px; }
+.doc-section-title {
+  font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase;
+  letter-spacing: 0.8px; border-bottom: 1px solid var(--border); padding-bottom: 4px; margin-bottom: 8px;
+}
+.doc-body { color: var(--text); line-height: 1.7; white-space: pre-wrap; font-size: 13px; }
+.doc-params { border-collapse: collapse; width: 100%; margin-top: 4px; }
+.doc-params td { padding: 4px 8px; vertical-align: top; font-size: 12px; }
+.doc-params td:first-child { color: var(--green); font-family: monospace; white-space: nowrap; width: 180px; }
+.doc-params td:last-child { color: var(--text); line-height: 1.5; }
+.doc-example {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
+  padding: 10px 12px; font-size: 12px; color: var(--text);
+  font-family: monospace; white-space: pre; overflow-x: auto; margin-top: 4px;
+}
+.mod-doc-box {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+  padding: 12px 14px; color: var(--muted); font-size: 12px; line-height: 1.7;
+  white-space: pre-wrap; margin-bottom: 20px;
+}
+.fn-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; margin-top: 8px;
+}
+.fn-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
+  padding: 8px 10px; cursor: pointer;
+}
+.fn-card:hover { border-color: var(--blue); }
+.fn-card-name { color: var(--blue); font-size: 12px; font-weight: 600; margin-bottom: 2px; }
+.fn-card-desc { color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── Backtest tab ── */
+.bt-layout { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+.bt-controls {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 10px 16px; border-bottom: 1px solid var(--border);
+  background: var(--surface); flex-shrink: 0;
+}
+.bt-controls label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.bt-controls select, .bt-controls input[type=date] {
+  background: var(--bg); border: 1px solid var(--border); color: var(--text);
+  padding: 5px 8px; border-radius: 4px; font-family: inherit; font-size: 13px;
+}
+.bt-controls select:focus, .bt-controls input[type=date]:focus { outline: none; border-color: var(--blue); }
+.bt-run-btn {
+  padding: 6px 18px; border: none; border-radius: 4px; cursor: pointer;
+  font-family: inherit; font-size: 13px; font-weight: 700;
+  background: var(--blue); color: #000;
+}
+.bt-run-btn:disabled { opacity: 0.4; cursor: default; }
+.bt-status { font-size: 12px; color: var(--muted); margin-left: auto; }
+.bt-status.running { color: var(--yellow); }
+.bt-status.done    { color: var(--green); }
+.bt-status.error   { color: var(--red); }
+
+.bt-body { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+
+.bt-metrics { display: flex; gap: 10px; flex-wrap: wrap; }
+.metric-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+  padding: 10px 16px; min-width: 120px;
+}
+.metric-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+.metric-value { font-size: 18px; font-weight: 700; }
+.metric-pos { color: var(--green); }
+.metric-neg { color: var(--red); }
+.metric-neu { color: var(--text); }
+
+.bt-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.bt-chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.bt-chart-title { padding: 8px 12px; font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border); }
+.bt-chart-body { height: 220px; }
+
+.bt-trades-card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.bt-trades-header { padding: 8px 12px; font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border); }
+.bt-trades-body { max-height: 280px; overflow-y: auto; }
+.bt-trades-body table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.bt-trades-body th { padding: 5px 12px; text-align: right; color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface); }
+.bt-trades-body th:first-child { text-align: left; }
+.bt-trades-body td { padding: 5px 12px; text-align: right; border-bottom: 1px solid #1c2128; }
+.bt-trades-body td:first-child { text-align: left; color: var(--muted); }
+.bt-empty { padding: 40px; text-align: center; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>FX MARKET</h1>
+  <button class="tab-btn active" onclick="showTab('market')">Market</button>
+  <button class="tab-btn"        onclick="showTab('strategies')">Strategies</button>
+  <button class="tab-btn"        onclick="showTab('library')">Library</button>
+  <button class="tab-btn"        onclick="showTab('backtest')">Backtest</button>
+  <span id="conn-badge">connecting…</span>
+</header>
+
+<!-- ═══════════════════════════════════════════════════════ MARKET TAB -->
+<div id="tab-market" class="tab-content active">
+  <div class="market-layout">
+
+    <div class="main-col">
+      <div class="card">
+        <div class="card-title">Live Prices</div>
+        <table>
+          <thead><tr>
+            <th>Pair</th><th>Bid</th><th>Ask</th><th>Spread (pip)</th><th>Age</th>
+          </tr></thead>
+          <tbody id="prices-body"><tr><td colspan="5" class="empty-msg">Connecting…</td></tr></tbody>
+        </table>
+      </div>
+
+      <div class="bottom-row">
+        <div class="panel">
+          <div class="card-title">Positions</div>
+          <div class="panel-body">
+            <table>
+              <thead><tr>
+                <th style="text-align:left">Pair</th><th>Qty</th><th>Avg Entry</th><th>Mid</th><th>Unrealized P&L</th>
+              </tr></thead>
+              <tbody id="positions-body"><tr><td colspan="5" class="empty-msg">No open positions</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="card-title">Recent Fills</div>
+          <div class="panel-body">
+            <table>
+              <thead><tr>
+                <th style="text-align:left">Pair</th><th>Side</th><th>Qty</th><th>Fill Price</th><th>Status</th>
+              </tr></thead>
+              <tbody id="fills-body"><tr><td colspan="5" class="empty-msg">No fills yet</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ticket-col">
+      <div class="card-title">Order Ticket</div>
+      <div class="ticket">
+        <div class="field">
+          <label>Pair</label>
+          <select id="pair-select"></select>
+        </div>
+        <div class="field">
+          <label>Side</label>
+          <div class="side-toggle">
+            <button class="side-btn buy active" onclick="setSide('buy')">BUY</button>
+            <button class="side-btn sell"       onclick="setSide('sell')">SELL</button>
+          </div>
+        </div>
+        <div class="field">
+          <label>Quantity (units)</label>
+          <input type="number" id="qty-input" value="10000" min="1000" step="1000">
+        </div>
+        <div class="price-preview" id="price-preview">—</div>
+        <button class="submit-btn buy" id="submit-btn" onclick="submitOrder()">BUY</button>
+        <div id="order-result"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ STRATEGIES TAB -->
+<div id="tab-strategies" class="tab-content">
+  <div class="strat-layout">
+
+    <!-- Sidebar: strategy list -->
+    <div class="strat-sidebar">
+      <div class="strat-sidebar-header">
+        <span>Strategies</span>
+        <button class="icon-btn" onclick="newStrategy()">+ New</button>
+      </div>
+      <div class="strat-list" id="strat-list">
+        <div class="empty-msg">No strategies yet</div>
+      </div>
+    </div>
+
+    <!-- Editor -->
+    <div class="strat-editor-col">
+      <div class="strat-toolbar" id="strat-toolbar">
+        <input class="strat-name-input" id="strat-name-input" placeholder="strategy_name" value="">
+        <button class="toolbar-btn" onclick="saveStrategy()">Save</button>
+        <button class="toolbar-btn start" id="btn-start" onclick="showStartDialog()">Run</button>
+        <button class="toolbar-btn stop"  id="btn-stop"  onclick="stopStrategy()" style="display:none">Stop</button>
+        <button class="toolbar-btn delete" onclick="deleteStrategy()">Delete</button>
+        <span class="strat-status-badge stopped" id="strat-status-badge">stopped</span>
+        <span id="strat-save-msg"></span>
+      </div>
+      <div id="editor-container">
+        <div class="no-strategy-msg" id="no-strategy-msg">Select or create a strategy</div>
+      </div>
+    </div>
+
+    <!-- Log -->
+    <div class="strat-log-col">
+      <div class="card-title">Strategy Log</div>
+      <div class="strat-log-body" id="strat-log"></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ LIBRARY TAB -->
+<div id="tab-library" class="tab-content">
+  <div class="lib-layout">
+
+    <div class="lib-sidebar">
+      <div class="lib-search-wrap">
+        <input id="lib-search" placeholder="Search functions…" oninput="filterLib(this.value)">
+      </div>
+      <div class="lib-tree" id="lib-tree">
+        <div class="empty-msg">Loading…</div>
+      </div>
+    </div>
+
+    <div class="lib-detail">
+      <div class="lib-detail-inner" id="lib-detail">
+        <div class="lib-placeholder">Select a module or function from the sidebar</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ BACKTEST TAB -->
+<div id="tab-backtest" class="tab-content">
+  <div class="bt-layout">
+
+    <div class="bt-controls">
+      <div>
+        <label>Strategy</label><br>
+        <select id="bt-strategy"></select>
+      </div>
+      <div>
+        <label>Pair</label><br>
+        <select id="bt-pair"></select>
+      </div>
+      <div>
+        <label>Start</label><br>
+        <input type="date" id="bt-start">
+      </div>
+      <div>
+        <label>End</label><br>
+        <input type="date" id="bt-end">
+      </div>
+      <div>
+        <label>Domestic Currency</label><br>
+        <select id="bt-domestic" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:4px;font-family:inherit;font-size:12px;">
+          <option value="USD">USD</option>
+          <option value="EUR">EUR</option>
+          <option value="GBP">GBP</option>
+          <option value="JPY">JPY</option>
+          <option value="CHF">CHF</option>
+          <option value="AUD">AUD</option>
+          <option value="CAD">CAD</option>
+          <option value="NZD">NZD</option>
+        </select>
+      </div>
+      <div>
+        <label>Capital</label><br>
+        <input type="number" id="bt-capital" value="10000" min="100" step="100" style="width:90px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:4px;font-family:inherit;font-size:12px;">
+      </div>
+      <button class="bt-run-btn" id="bt-run-btn" onclick="runBacktest()">Run Backtest</button>
+      <span class="bt-status" id="bt-status"></span>
+    </div>
+
+    <div class="bt-body" id="bt-body">
+      <div class="bt-empty">Configure a strategy and date range above, then click Run Backtest.</div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Strategy start dialog -->
+<div id="start-dialog" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:100;align-items:center;justify-content:center;">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:24px;width:320px;display:flex;flex-direction:column;gap:12px;">
+    <div style="font-size:14px;font-weight:700">Run Strategy</div>
+    <div class="field">
+      <label>Pair</label>
+      <select id="start-pair" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:4px;font-family:inherit;font-size:13px;"></select>
+    </div>
+    <div class="field">
+      <label>Quantity (units)</label>
+      <input type="number" id="start-qty" value="10000" min="1000" step="1000" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:4px;font-family:inherit;font-size:13px;">
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px;">
+      <button onclick="hideStartDialog()" style="padding:7px 16px;border:1px solid var(--border);background:transparent;color:var(--muted);border-radius:4px;cursor:pointer;font-family:inherit;">Cancel</button>
+      <button onclick="startStrategy()" style="padding:7px 16px;border:none;background:var(--green);color:#000;border-radius:4px;cursor:pointer;font-family:inherit;font-weight:700;">Start</button>
+    </div>
+  </div>
+</div>
+
+<!-- Lightweight Charts (TradingView) -->
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+
+<!-- Monaco editor loader -->
+<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
+<script>
+const BASE = '';
+let selectedSide = 'buy';
+let quotes = {};
+let selectedPair = null;
+let connectedCount = 0;
+let totalPairs = 0;
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+function showTab(name) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+  document.getElementById(`tab-${name}`).classList.add('active');
+  event.target.classList.add('active');
+}
+
+// ═══════════════════════════════════════════════════════════ MARKET
+
+async function initMarket() {
+  const pairs = await fetch(`${BASE}/api/pairs`).then(r => r.json());
+  totalPairs = pairs.length;
+
+  const sel = document.getElementById('pair-select');
+  pairs.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p; opt.textContent = p;
+    sel.appendChild(opt);
+  });
+  sel.addEventListener('change', updatePreview);
+  selectedPair = pairs[0];
+
+  const tbody = document.getElementById('prices-body');
+  tbody.innerHTML = '';
+  pairs.forEach(pair => {
+    quotes[pair] = null;
+    const tr = document.createElement('tr');
+    tr.className = 'pair-row';
+    tr.id = `row-${pair}`;
+    tr.innerHTML = `
+      <td class="pair-name">${pair}</td>
+      <td class="bid-cell" id="bid-${pair}">—</td>
+      <td class="ask-cell" id="ask-${pair}">—</td>
+      <td class="spread-cell" id="spread-${pair}">—</td>
+      <td class="age-cell" id="age-${pair}">—</td>`;
+    tr.onclick = () => selectPair(pair);
+    tbody.appendChild(tr);
+  });
+  selectPair(pairs[0]);
+  pairs.forEach(connectSSE);
+
+  refreshPositions();
+  refreshFills();
+  setInterval(refreshPositions, 2000);
+  setInterval(refreshFills, 3000);
+  setInterval(updateAges, 1000);
+}
+
+function connectSSE(pair) {
+  const es = new EventSource(`${BASE}/api/quotes/${pair}/stream`);
+  es.onopen = () => { connectedCount++; updateBadge(); };
+  es.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    if (data.type === 'heartbeat') return;
+    onQuote(pair, data);
+  };
+  es.onerror = () => {
+    connectedCount = Math.max(0, connectedCount - 1);
+    updateBadge();
+    es.close();
+    setTimeout(() => connectSSE(pair), 5000);
+  };
+}
+
+function onQuote(pair, data) {
+  const prev = quotes[pair];
+  quotes[pair] = { bid: data.best_bid, ask: data.best_ask, spread: data.spread_pips, ts: new Date() };
+  const dec = pair.includes('JPY') ? 3 : 5;
+  const bidEl = document.getElementById(`bid-${pair}`);
+  if (!bidEl) return;
+  if (prev) {
+    const dir = data.best_bid > prev.bid ? 'up' : data.best_bid < prev.bid ? 'down' : null;
+    if (dir) flash(document.getElementById(`row-${pair}`), dir);
+  }
+  bidEl.textContent = data.best_bid.toFixed(dec);
+  document.getElementById(`ask-${pair}`).textContent = data.best_ask.toFixed(dec);
+  document.getElementById(`spread-${pair}`).textContent = (data.spread_pips ?? ((data.best_ask - data.best_bid) / (pair.includes('JPY') ? 0.01 : 0.0001)).toFixed(1));
+  if (pair === selectedPair) updatePreview();
+}
+
+function flash(row, dir) {
+  row.classList.remove('flash-up', 'flash-down');
+  void row.offsetWidth;
+  row.classList.add(dir === 'up' ? 'flash-up' : 'flash-down');
+}
+
+function updateAges() {
+  const now = new Date();
+  for (const [pair, q] of Object.entries(quotes)) {
+    const el = document.getElementById(`age-${pair}`);
+    if (!el) continue;
+    if (!q) { el.textContent = '—'; continue; }
+    const sec = Math.round((now - q.ts) / 1000);
+    el.textContent = sec < 60 ? `${sec}s` : `${Math.round(sec/60)}m`;
+  }
+}
+
+function updateBadge() {
+  const el = document.getElementById('conn-badge');
+  if (connectedCount >= totalPairs) {
+    el.textContent = `connected (${connectedCount} feeds)`;
+    el.className = 'connected';
+  } else {
+    el.textContent = `${connectedCount}/${totalPairs} feeds`;
+    el.className = '';
+  }
+}
+
+function selectPair(pair) {
+  selectedPair = pair;
+  document.querySelectorAll('.pair-row').forEach(r => r.classList.remove('selected'));
+  document.getElementById(`row-${pair}`)?.classList.add('selected');
+  document.getElementById('pair-select').value = pair;
+  updatePreview();
+}
+
+function setSide(side) {
+  selectedSide = side;
+  document.querySelectorAll('.side-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector(`.side-btn.${side}`).classList.add('active');
+  const btn = document.getElementById('submit-btn');
+  btn.textContent = side.toUpperCase();
+  btn.className = `submit-btn ${side}`;
+  updatePreview();
+}
+
+function updatePreview() {
+  const pair = document.getElementById('pair-select').value;
+  selectedPair = pair;
+  const q = quotes[pair];
+  const el = document.getElementById('price-preview');
+  if (!q) { el.innerHTML = '<span style="color:var(--muted)">Waiting for quote…</span>'; return; }
+  const price = selectedSide === 'buy' ? q.ask : q.bid;
+  const dec = pair.includes('JPY') ? 3 : 5;
+  const cls = selectedSide === 'buy' ? 'preview-buy' : 'preview-sell';
+  el.innerHTML = `<div style="font-size:11px;color:var(--muted)">${selectedSide === 'buy' ? 'ASK' : 'BID'}</div><div class="preview-price ${cls}">${price.toFixed(dec)}</div>`;
+}
+
+async function submitOrder() {
+  const pair = document.getElementById('pair-select').value;
+  const qty  = parseFloat(document.getElementById('qty-input').value);
+  const btn  = document.getElementById('submit-btn');
+  const resultEl = document.getElementById('order-result');
+  if (!qty || qty <= 0) { showResult('Invalid quantity', false); return; }
+  btn.disabled = true;
+  resultEl.style.display = 'none';
+  try {
+    const resp = await fetch(`${BASE}/api/orders`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({pair, side: selectedSide, quantity: qty}),
+    });
+    const fill = await resp.json();
+    if (fill.status === 'filled') {
+      const dec = pair.includes('JPY') ? 3 : 5;
+      showResult(`Filled ${qty.toLocaleString()} ${pair} @ ${fill.fill_price.toFixed(dec)}`, true);
+    } else {
+      showResult(`${fill.status}: ${fill.raw?.reason ?? 'unknown'}`, false);
+    }
+    refreshPositions(); refreshFills();
+  } catch (e) {
+    showResult(`Network error: ${e.message}`, false);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function showResult(msg, ok) {
+  const el = document.getElementById('order-result');
+  el.textContent = msg; el.className = ok ? 'success' : 'error'; el.style.display = 'block';
+  setTimeout(() => { el.style.display = 'none'; }, 5000);
+}
+
+async function refreshPositions() {
+  const positions = await fetch(`${BASE}/api/positions`).then(r => r.json()).catch(() => []);
+  const tbody = document.getElementById('positions-body');
+  if (!positions.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty-msg">No open positions</td></tr>'; return; }
+  tbody.innerHTML = positions.map(p => {
+    const dec = p.pair.includes('JPY') ? 3 : 5;
+    const qtyClass = p.qty > 0 ? 'pos-long' : 'pos-short';
+    const qtyLabel = p.qty > 0 ? `+${p.qty.toLocaleString()}` : p.qty.toLocaleString();
+    const mid = p.current_mid != null ? p.current_mid.toFixed(dec) : '—';
+    const pnl = p.unrealized_pnl != null
+      ? `<span class="${p.unrealized_pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">${p.unrealized_pnl >= 0 ? '+' : ''}${p.unrealized_pnl.toFixed(2)}</span>`
+      : '—';
+    return `<tr><td>${p.pair}</td><td class="${qtyClass}">${qtyLabel}</td><td>${p.avg_price.toFixed(dec)}</td><td>${mid}</td><td>${pnl}</td></tr>`;
+  }).join('');
+}
+
+async function refreshFills() {
+  const fills = await fetch(`${BASE}/api/fills`).then(r => r.json()).catch(() => []);
+  const tbody = document.getElementById('fills-body');
+  if (!fills.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty-msg">No fills yet</td></tr>'; return; }
+  tbody.innerHTML = fills.slice(0, 20).map(f => {
+    const dec = f.pair.includes('JPY') ? 3 : 5;
+    const sideClass = f.side === 'buy' ? 'side-buy' : 'side-sell';
+    const statusClass = f.status === 'filled' ? 'status-filled' : 'status-rejected';
+    return `<tr>
+      <td>${f.pair}</td>
+      <td class="${sideClass}">${f.side.toUpperCase()}</td>
+      <td>${f.quantity.toLocaleString()}</td>
+      <td>${f.fill_price > 0 ? f.fill_price.toFixed(dec) : '—'}</td>
+      <td class="${statusClass}">${f.status}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════ STRATEGIES
+
+let editor = null;
+let currentStrat = null;
+let logPollTimer = null;
+
+require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs' } });
+require(['vs/editor/editor.main'], function () {
+  editor = monaco.editor.create(document.getElementById('editor-container'), {
+    value: '',
+    language: 'python',
+    theme: 'vs-dark',
+    fontSize: 13,
+    minimap: { enabled: false },
+    scrollBeyondLastLine: false,
+    automaticLayout: true,
+  });
+  document.getElementById('no-strategy-msg').style.display = 'none';
+  refreshStratList();
+});
+
+async function refreshStratList() {
+  const list = await fetch(`${BASE}/api/strategies`).then(r => r.json()).catch(() => []);
+  const container = document.getElementById('strat-list');
+  if (!list.length) { container.innerHTML = '<div class="empty-msg">No strategies yet</div>'; return; }
+  container.innerHTML = list.map(s => `
+    <div class="strat-item ${currentStrat === s.name ? 'selected' : ''}" onclick="selectStrat('${s.name}')">
+      <span class="strat-item-name">${s.name}</span>
+      <span class="strat-item-meta">
+        <span class="${s.status === 'running' ? 'badge-running' : 'badge-stopped'}">${s.status === 'running' ? '● running' : '○ stopped'}</span>
+        <span>${s.pair}</span>
+        ${s.position !== 0 ? `<span class="${s.position > 0 ? 'pos-long' : 'pos-short'}">${s.position > 0 ? '+' : ''}${s.position.toLocaleString()}</span>` : ''}
+      </span>
+    </div>`).join('');
+}
+
+async function selectStrat(name) {
+  currentStrat = name;
+  document.getElementById('strat-name-input').value = name;
+
+  const resp = await fetch(`${BASE}/api/strategies/${name}/code`).then(r => r.json());
+  if (editor) editor.setValue(resp.code);
+
+  await updateStratStatus(name);
+  refreshStratList();
+  startLogPolling(name);
+}
+
+async function updateStratStatus(name) {
+  const list = await fetch(`${BASE}/api/strategies`).then(r => r.json()).catch(() => []);
+  const s = list.find(x => x.name === name);
+  if (!s) return;
+  const badge = document.getElementById('strat-status-badge');
+  const btnStart = document.getElementById('btn-start');
+  const btnStop  = document.getElementById('btn-stop');
+  badge.textContent = s.status;
+  badge.className = `strat-status-badge ${s.status}`;
+  if (s.status === 'running') {
+    btnStart.style.display = 'none';
+    btnStop.style.display  = '';
+  } else {
+    btnStart.style.display = '';
+    btnStop.style.display  = 'none';
+  }
+}
+
+async function saveStrategy() {
+  if (!editor) return;
+  const name = document.getElementById('strat-name-input').value.trim();
+  if (!name) { alert('Enter a strategy name'); return; }
+  const code = editor.getValue();
+  const resp = await fetch(`${BASE}/api/strategies/${name}`, {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({code}),
+  });
+  if (resp.ok) {
+    currentStrat = name;
+    const msg = document.getElementById('strat-save-msg');
+    msg.textContent = 'Saved';
+    setTimeout(() => { msg.textContent = ''; }, 2000);
+    refreshStratList();
+  } else {
+    const err = await resp.json();
+    alert(`Save failed: ${err.detail}`);
+  }
+}
+
+async function showStartDialog() {
+  if (!currentStrat) return;
+  // Populate pair selector
+  const pairs = await fetch(`${BASE}/api/pairs`).then(r => r.json()).catch(() => []);
+  const sel = document.getElementById('start-pair');
+  sel.innerHTML = pairs.map(p => `<option value="${p}">${p}</option>`).join('');
+  const dlg = document.getElementById('start-dialog');
+  dlg.style.display = 'flex';
+}
+
+function hideStartDialog() {
+  document.getElementById('start-dialog').style.display = 'none';
+}
+
+async function startStrategy() {
+  if (!currentStrat) return;
+  const pair = document.getElementById('start-pair').value;
+  const qty  = parseFloat(document.getElementById('start-qty').value);
+  hideStartDialog();
+
+  const resp = await fetch(`${BASE}/api/strategies/${currentStrat}/start`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ pair, quantity: qty }),
+  });
+  if (resp.ok) {
+    await updateStratStatus(currentStrat);
+    refreshStratList();
+    startLogPolling(currentStrat);
+  } else {
+    const err = await resp.json();
+    alert(`Start failed: ${err.detail}`);
+  }
+}
+
+async function stopStrategy() {
+  if (!currentStrat) return;
+  await fetch(`${BASE}/api/strategies/${currentStrat}/stop`, { method: 'POST' });
+  await updateStratStatus(currentStrat);
+  refreshStratList();
+}
+
+async function deleteStrategy() {
+  if (!currentStrat) return;
+  if (!confirm(`Delete strategy "${currentStrat}"?`)) return;
+  await fetch(`${BASE}/api/strategies/${currentStrat}`, { method: 'DELETE' });
+  currentStrat = null;
+  if (editor) editor.setValue('');
+  document.getElementById('strat-name-input').value = '';
+  stopLogPolling();
+  refreshStratList();
+}
+
+function newStrategy() {
+  currentStrat = null;
+  document.getElementById('strat-name-input').value = '';
+  document.getElementById('strat-status-badge').textContent = 'stopped';
+  document.getElementById('strat-status-badge').className = 'strat-status-badge stopped';
+  document.getElementById('btn-start').style.display = '';
+  document.getElementById('btn-stop').style.display = 'none';
+  document.querySelectorAll('.strat-item').forEach(el => el.classList.remove('selected'));
+  stopLogPolling();
+  clearLog();
+  if (editor) editor.setValue(`from fx_market.strategy import StrategyBase, StrategyContext
+from fx_market.hff import ewma
+
+
+class MyStrategy(StrategyBase):
+    pair = "EURUSD"
+    quantity = 10_000
+
+    def on_tick(self, ctx: StrategyContext):
+        if len(ctx.mid) < 50:
+            return None
+
+        fast = ewma(ctx.mid, tau=5)
+        slow = ewma(ctx.mid, tau=30)
+
+        if fast[-2] <= slow[-2] and fast[-1] > slow[-1]:
+            return "buy"
+        if fast[-2] >= slow[-2] and fast[-1] < slow[-1]:
+            return "sell"
+        return None
+`);
+}
+
+function startLogPolling(name) {
+  stopLogPolling();
+  pollLog(name);
+  logPollTimer = setInterval(() => pollLog(name), 1500);
+}
+
+function stopLogPolling() {
+  if (logPollTimer) { clearInterval(logPollTimer); logPollTimer = null; }
+}
+
+async function pollLog(name) {
+  if (name !== currentStrat) return;
+  const data = await fetch(`${BASE}/api/strategies/${name}/log`).then(r => r.json()).catch(() => null);
+  if (!data) return;
+  renderLog(data.log);
+}
+
+function renderLog(lines) {
+  const el = document.getElementById('strat-log');
+  const wasAtBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 20;
+  el.innerHTML = lines.map(line => {
+    let cls = 'log-line';
+    if (line.includes('Signal') || line.includes('SIGNAL')) cls += ' signal';
+    else if (line.includes('Fill') || line.includes('filled')) cls += ' fill';
+    else if (line.includes('error') || line.includes('Error')) cls += ' error';
+    else if (line.includes('Started') || line.includes('Stopped')) cls += ' info';
+    return `<div class="${cls}">${escHtml(line)}</div>`;
+  }).join('');
+  if (wasAtBottom) el.scrollTop = el.scrollHeight;
+}
+
+function clearLog() {
+  document.getElementById('strat-log').innerHTML = '';
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ═══════════════════════════════════════════════════════════ LIBRARY
+
+let libData = [];          // full library JSON
+let selectedFn = null;     // {lib, module, fn}
+
+async function initLibrary() {
+  libData = await fetch(`${BASE}/api/library`).then(r => r.json()).catch(() => []);
+  buildLibTree(libData, '');
+}
+
+function buildLibTree(data, filter) {
+  const container = document.getElementById('lib-tree');
+  const q = filter.toLowerCase();
+  let html = '';
+
+  for (const lib of data) {
+    let anyMod = false;
+    let modHtml = '';
+    for (const mod of lib.modules) {
+      const fns = mod.functions.filter(f =>
+        !q || f.name.includes(q) || (f.doc && f.doc.toLowerCase().includes(q))
+      );
+      if (!fns.length && q) continue;
+      anyMod = true;
+      const modId = `${lib.library}-${mod.name}`;
+      const isOpen = !q ? '' : 'open';
+      modHtml += `
+        <div class="lib-mod-wrap">
+          <div class="lib-mod-header" onclick="toggleMod('${modId}', this); showMod('${lib.library}','${mod.name}')">
+            <span>▶</span> ${mod.label}
+          </div>
+          <div class="lib-fn-list ${isOpen}" id="fnlist-${modId}">
+            ${fns.map(f => `
+              <div class="lib-fn-item" id="fn-${lib.library}-${mod.name}-${f.name}"
+                   onclick="showFn('${lib.library}','${mod.name}','${f.name}')">
+                ${f.name}
+              </div>`).join('')}
+          </div>
+        </div>`;
+    }
+    if (!anyMod) continue;
+    html += `
+      <div class="lib-group">
+        <div class="lib-group-header" onclick="toggleGroup('${lib.library}')">
+          ${lib.library.toUpperCase()}
+        </div>
+        <div id="libgroup-${lib.library}">${modHtml}</div>
+      </div>`;
+  }
+  container.innerHTML = html || '<div class="empty-msg">No results</div>';
+}
+
+function toggleMod(modId, el) {
+  const list = document.getElementById(`fnlist-${modId}`);
+  const arrow = el.querySelector('span');
+  const open = list.classList.toggle('open');
+  arrow.textContent = open ? '▼' : '▶';
+}
+
+function toggleGroup(lib) {
+  const el = document.getElementById(`libgroup-${lib}`);
+  el.style.display = el.style.display === 'none' ? '' : 'none';
+}
+
+function filterLib(q) {
+  buildLibTree(libData, q);
+}
+
+function showFn(libName, modName, fnName) {
+  // Highlight in tree
+  document.querySelectorAll('.lib-fn-item').forEach(el => el.classList.remove('selected'));
+  const item = document.getElementById(`fn-${libName}-${modName}-${fnName}`);
+  if (item) item.classList.add('selected');
+
+  const lib = libData.find(l => l.library === libName);
+  const mod = lib?.modules.find(m => m.name === modName);
+  const fn = mod?.functions.find(f => f.name === fnName);
+  if (!fn) return;
+
+  selectedFn = { lib, mod, fn };
+  renderFnDetail(lib, mod, fn);
+}
+
+function showMod(libName, modName) {
+  const lib = libData.find(l => l.library === libName);
+  const mod = lib?.modules.find(m => m.name === modName);
+  if (!mod) return;
+  renderModDetail(lib, mod);
+}
+
+function renderFnDetail(lib, mod, fn) {
+  const parsed = parseDocstring(fn.doc);
+  const detail = document.getElementById('lib-detail');
+  detail.innerHTML = `
+    <div style="margin-bottom:6px">
+      <span class="fn-import">import: <code>${fn.import_line}</code></span>
+      <button class="fn-copy-btn" onclick="copyImport('${fn.import_line}')">Copy import</button>
+      <button class="fn-use-btn" onclick="useInEditor('${fn.import_line}', '${fn.name}')">Use in editor</button>
+    </div>
+    <div class="fn-signature">${escHtml(fn.signature)}</div>
+
+    ${parsed.description ? `<div class="doc-body">${escHtml(parsed.description)}</div>` : ''}
+
+    ${parsed.params.length ? `
+      <div class="doc-section">
+        <div class="doc-section-title">Parameters</div>
+        <table class="doc-params">
+          ${parsed.params.map(p => `<tr><td>${escHtml(p.name)}</td><td>${escHtml(p.desc)}</td></tr>`).join('')}
+        </table>
+      </div>` : ''}
+
+    ${parsed.returns ? `
+      <div class="doc-section">
+        <div class="doc-section-title">Returns</div>
+        <div class="doc-body">${escHtml(parsed.returns)}</div>
+      </div>` : ''}
+
+    ${parsed.examples ? `
+      <div class="doc-section">
+        <div class="doc-section-title">Examples</div>
+        <div class="doc-example">${escHtml(parsed.examples)}</div>
+      </div>` : ''}
+
+    ${parsed.notes ? `
+      <div class="doc-section">
+        <div class="doc-section-title">Notes</div>
+        <div class="doc-body">${escHtml(parsed.notes)}</div>
+      </div>` : ''}
+
+    <div style="margin-top:24px;font-size:11px;color:var(--muted)">
+      ${lib.book} &nbsp;·&nbsp; ${mod.label}
+    </div>`;
+}
+
+function renderModDetail(lib, mod) {
+  const detail = document.getElementById('lib-detail');
+  detail.innerHTML = `
+    <div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:6px">${mod.label}</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:14px">${lib.book}</div>
+    ${mod.doc ? `<div class="mod-doc-box">${escHtml(mod.doc)}</div>` : ''}
+    <div class="doc-section-title">Functions</div>
+    <div class="fn-grid">
+      ${mod.functions.map(f => {
+        const firstLine = f.doc.split('\n')[0];
+        return `<div class="fn-card" onclick="showFn('${lib.library}','${mod.name}','${f.name}')">
+          <div class="fn-card-name">${f.name}</div>
+          <div class="fn-card-desc" title="${escHtml(firstLine)}">${escHtml(firstLine)}</div>
+        </div>`;
+      }).join('')}
+    </div>`;
+}
+
+function parseDocstring(doc) {
+  const sections = { description: '', params: [], returns: '', examples: '', notes: '' };
+  if (!doc) return sections;
+
+  const HEADERS = /^(Parameters|Returns|Examples?|Notes?|References?|See Also)\s*\n[-─]+/m;
+  const parts = doc.split(HEADERS);
+
+  sections.description = parts[0].trim();
+
+  for (let i = 1; i < parts.length; i += 2) {
+    const header = parts[i]?.toLowerCase().replace(/s$/, '') ?? '';
+    const body = parts[i + 1] ?? '';
+    if (header.startsWith('param')) {
+      sections.params = parseParams(body);
+    } else if (header.startsWith('return')) {
+      sections.returns = body.trim();
+    } else if (header.startsWith('example')) {
+      sections.examples = body.trim();
+    } else if (header.startsWith('note')) {
+      sections.notes = body.trim();
+    }
+  }
+  return sections;
+}
+
+function parseParams(block) {
+  const params = [];
+  const lines = block.split('\n');
+  let current = null;
+  for (const line of lines) {
+    const m = line.match(/^(\w[\w, *]*)\s*:\s*(.*)$/);
+    if (m && !line.startsWith('    ') && !line.startsWith('\t')) {
+      if (current) params.push(current);
+      current = { name: m[1].trim(), desc: m[2].trim() };
+    } else if (current && (line.startsWith('    ') || line.startsWith('\t'))) {
+      current.desc += ' ' + line.trim();
+    }
+  }
+  if (current) params.push(current);
+  return params;
+}
+
+async function copyImport(importLine) {
+  await navigator.clipboard.writeText(importLine).catch(() => {});
+}
+
+function useInEditor(importLine, fnName) {
+  // Switch to strategies tab and prepend import
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+  document.getElementById('tab-strategies').classList.add('active');
+  document.querySelectorAll('.tab-btn')[1].classList.add('active');
+
+  if (editor) {
+    const current = editor.getValue();
+    if (!current.includes(importLine)) {
+      editor.setValue(importLine + '\n' + current);
+    }
+    editor.focus();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════ BACKTEST
+
+let btPollTimer = null;
+let btPriceChart = null, btEquityChart = null;
+
+async function initBacktest() {
+  // Default dates: last 7 days
+  const end = new Date();
+  const start = new Date(end - 7 * 86400e3);
+  document.getElementById('bt-end').value   = end.toISOString().slice(0, 10);
+  document.getElementById('bt-start').value = start.toISOString().slice(0, 10);
+  await Promise.all([populateBtStrategies(), populateBtPairs()]);
+}
+
+async function populateBtStrategies() {
+  const list = await fetch(`${BASE}/api/strategies`).then(r => r.json()).catch(() => []);
+  const sel = document.getElementById('bt-strategy');
+  sel.innerHTML = list.map(s => `<option value="${s.name}">${s.name}</option>`).join('');
+}
+
+async function populateBtPairs() {
+  const pairs = await fetch(`${BASE}/api/pairs`).then(r => r.json()).catch(() => []);
+  const sel = document.getElementById('bt-pair');
+  sel.innerHTML = pairs.map(p => `<option value="${p}">${p}</option>`).join('');
+}
+
+async function runBacktest() {
+  const name     = document.getElementById('bt-strategy').value;
+  const pair     = document.getElementById('bt-pair').value;
+  const start    = document.getElementById('bt-start').value;
+  const end      = document.getElementById('bt-end').value;
+  const domestic = document.getElementById('bt-domestic').value;
+  const capital  = parseFloat(document.getElementById('bt-capital').value) || 10000;
+  if (!name || !pair || !start || !end) { alert('Select a strategy, pair, and date range'); return; }
+
+  const btn = document.getElementById('bt-run-btn');
+  btn.disabled = true;
+  setBtStatus('running', 'Starting…');
+  document.getElementById('bt-body').innerHTML = '<div class="bt-empty">Running backtest…</div>';
+
+  try {
+    const resp = await fetch(`${BASE}/api/backtest/run`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        strategy_name: name, pair,
+        start: start + 'T00:00:00Z', end: end + 'T23:59:59Z',
+        domestic_currency: domestic, capital,
+      }),
+    });
+    if (!resp.ok) { const e = await resp.json(); throw new Error(e.detail); }
+    const { id } = await resp.json();
+    pollBacktest(id);
+  } catch (e) {
+    setBtStatus('error', e.message);
+    btn.disabled = false;
+  }
+}
+
+function pollBacktest(id) {
+  if (btPollTimer) clearInterval(btPollTimer);
+  btPollTimer = setInterval(async () => {
+    const result = await fetch(`${BASE}/api/backtest/${id}`).then(r => r.json()).catch(() => null);
+    if (!result) return;
+
+    setBtStatus(result.status, result.progress ?? result.status);
+
+    if (result.status === 'running') return;
+
+    clearInterval(btPollTimer);
+    btPollTimer = null;
+    document.getElementById('bt-run-btn').disabled = false;
+
+    if (result.status === 'error') {
+      document.getElementById('bt-body').innerHTML =
+        `<div class="bt-empty" style="color:var(--red);white-space:pre-wrap">${escHtml(result.error)}</div>`;
+      return;
+    }
+    renderBacktestResult(result);
+  }, 1500);
+}
+
+function setBtStatus(cls, msg) {
+  const el = document.getElementById('bt-status');
+  el.className = `bt-status ${cls}`;
+  el.textContent = msg;
+}
+
+function renderBacktestResult(r) {
+  const m = r.metrics;
+  const dom = r.domestic || '';
+  const body = document.getElementById('bt-body');
+
+  // ── Metrics cards ─────────────────────────────────────────────────────────
+  const metrics = [
+    { label: `P&L (${dom})`,    value: m.total_pnl_domestic, fmt: v => (v >= 0 ? '+' : '') + v.toFixed(4), cls: v => v >= 0 ? 'pos' : 'neg' },
+    { label: 'Return %',        value: m.total_return_pct,   fmt: v => (v >= 0 ? '+' : '') + v.toFixed(2) + '%', cls: v => v >= 0 ? 'pos' : 'neg' },
+    { label: 'Sharpe',          value: m.sharpe_ratio,       fmt: v => v.toFixed(2), cls: v => v >= 1 ? 'pos' : v >= 0 ? 'neu' : 'neg' },
+    { label: 'Win Rate',        value: m.win_rate_pct,       fmt: v => v.toFixed(1) + '%', cls: v => v >= 50 ? 'pos' : 'neg' },
+    { label: 'Profit Factor',   value: m.profit_factor,      fmt: v => v == null ? '∞' : v.toFixed(2), cls: v => (v == null || v >= 1) ? 'pos' : 'neg' },
+    { label: 'Max Drawdown',    value: m.max_drawdown,       fmt: v => v.toFixed(4), cls: () => 'neg' },
+    { label: 'Closing Trades',  value: m.num_closing_trades, fmt: v => v, cls: () => 'neu' },
+    { label: 'Ticks',           value: r.total_ticks,        fmt: v => v.toLocaleString(), cls: () => 'neu' },
+  ];
+
+  const cardsHtml = metrics.map(({ label, value, fmt, cls }) =>
+    `<div class="metric-card">
+      <div class="metric-label">${label}</div>
+      <div class="metric-value metric-${cls(value)}">${value != null ? fmt(value) : '—'}</div>
+    </div>`
+  ).join('');
+
+  // ── Wallet summary ────────────────────────────────────────────────────────
+  const fmtWallet = w => Object.entries(w).map(([k, v]) => `${v.toLocaleString(undefined, {maximumFractionDigits: 4})} ${k}`).join(' / ');
+  const walletHtml = `
+    <div style="display:flex;gap:24px;font-size:12px;color:var(--muted);flex-wrap:wrap;">
+      <span><b style="color:var(--text)">Capital:</b> ${r.initial_capital?.toLocaleString()} ${dom}</span>
+      <span><b style="color:var(--text)">Starting wallet:</b> ${fmtWallet(r.starting_wallet || {})}</span>
+      <span><b style="color:var(--text)">Ending wallet:</b> ${fmtWallet(r.ending_wallet || {})}</span>
+      <span><b style="color:var(--text)">Final value:</b> ${r.final_value_domestic?.toFixed(4)} ${dom}</span>
+    </div>`;
+
+  body.innerHTML = `
+    <div class="bt-metrics">${cardsHtml}</div>
+    ${walletHtml}
+    <div class="bt-charts">
+      <div class="bt-chart-card">
+        <div class="bt-chart-title">Price + Trades — ${r.pair}</div>
+        <div class="bt-chart-body" id="bt-price-chart"></div>
+      </div>
+      <div class="bt-chart-card">
+        <div class="bt-chart-title">Equity Curve — ${dom}</div>
+        <div class="bt-chart-body" id="bt-equity-chart"></div>
+      </div>
+    </div>
+    <div class="bt-trades-card">
+      <div class="bt-trades-header">Trades (${r.trades.length})</div>
+      <div class="bt-trades-body">${renderTradesTable(r.trades, r.pair)}</div>
+    </div>`;
+
+  // Render charts after DOM is updated
+  setTimeout(() => {
+    renderPriceChart(r);
+    renderEquityChart(r);
+  }, 50);
+}
+
+function renderPriceChart(r) {
+  const el = document.getElementById('bt-price-chart');
+  if (!el || !window.LightweightCharts) return;
+
+  if (btPriceChart) { btPriceChart.remove(); btPriceChart = null; }
+
+  btPriceChart = LightweightCharts.createChart(el, {
+    width: el.clientWidth, height: el.clientHeight,
+    layout: { background: { color: '#161b22' }, textColor: '#8b949e' },
+    grid: { vertLines: { color: '#21262d' }, horzLines: { color: '#21262d' } },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    rightPriceScale: { borderColor: '#30363d' },
+    timeScale: { borderColor: '#30363d', timeVisible: true },
+  });
+
+  const line = btPriceChart.addLineSeries({ color: '#58a6ff', lineWidth: 1, priceLineVisible: false });
+  const priceData = r.price_series
+    .map(p => ({ time: Math.floor(new Date(p.t).getTime() / 1000), value: p.v }))
+    .filter((p, i, a) => i === 0 || p.time !== a[i-1].time);
+  line.setData(priceData);
+
+  // Trade markers
+  const markers = r.trades
+    .filter(t => t.side === 'buy' || t.side === 'sell')
+    .map(t => ({
+      time: Math.floor(new Date(t.timestamp).getTime() / 1000),
+      position: t.side === 'buy' ? 'belowBar' : 'aboveBar',
+      color: t.side === 'buy' ? '#3fb950' : '#f85149',
+      shape: t.side === 'buy' ? 'arrowUp' : 'arrowDown',
+      text: t.side.toUpperCase(),
+    }));
+  line.setMarkers(markers);
+  btPriceChart.timeScale().fitContent();
+}
+
+function renderEquityChart(r) {
+  const el = document.getElementById('bt-equity-chart');
+  if (!el || !window.LightweightCharts) return;
+
+  if (btEquityChart) { btEquityChart.remove(); btEquityChart = null; }
+
+  btEquityChart = LightweightCharts.createChart(el, {
+    width: el.clientWidth, height: el.clientHeight,
+    layout: { background: { color: '#161b22' }, textColor: '#8b949e' },
+    grid: { vertLines: { color: '#21262d' }, horzLines: { color: '#21262d' } },
+    rightPriceScale: { borderColor: '#30363d' },
+    timeScale: { borderColor: '#30363d', timeVisible: true },
+  });
+
+  const line = btEquityChart.addLineSeries({
+    color: '#3fb950', lineWidth: 1, priceLineVisible: false,
+    topColor: 'rgba(63,185,80,0.15)', bottomColor: 'rgba(63,185,80,0)',
+    baseLineVisible: true, baseLineColor: '#30363d',
+  });
+
+  const eqData = r.equity_curve
+    .map(p => ({ time: Math.floor(new Date(p.t).getTime() / 1000), value: p.v }))
+    .filter((p, i, a) => i === 0 || p.time !== a[i-1].time);
+  line.setData(eqData);
+  btEquityChart.timeScale().fitContent();
+}
+
+function renderTradesTable(trades, pair) {
+  if (!trades.length) return '<div class="bt-empty">No trades</div>';
+  const dec = pair && pair.includes('JPY') ? 3 : 5;
+  const rows = trades.slice(0, 500).map(t => {
+    const sideClass = t.side === 'buy' ? 'side-buy' : t.side === 'sell' ? 'side-sell' : '';
+    const pnl = t.pnl_quote ?? 0;
+    const pnlClass  = pnl > 0 ? 'pnl-pos' : pnl < 0 ? 'pnl-neg' : '';
+    return `<tr>
+      <td>${t.timestamp.replace('T', ' ').slice(0, 19)}</td>
+      <td class="${sideClass}">${t.side.toUpperCase()}</td>
+      <td>${t.quantity.toLocaleString()}</td>
+      <td>${t.price ? t.price.toFixed(dec) : '—'}</td>
+      <td class="${pnlClass}">${pnl !== 0 ? (pnl > 0 ? '+' : '') + pnl.toFixed(4) : '—'}</td>
+    </tr>`;
+  }).join('');
+  return `<table>
+    <thead><tr><th style="text-align:left">Time</th><th>Side</th><th>Qty</th><th>Price</th><th>P&L (quote)</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+// ─── Boot ─────────────────────────────────────────────────────────────────────
+initMarket();
+setInterval(refreshStratList, 5000);
+initLibrary();
+initBacktest();
+</script>
+</body>
+</html>

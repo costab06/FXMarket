@@ -51,6 +51,12 @@ class MarketAggregator:
     def subscribe(self, callback: AggregatedQuoteCallback) -> None:
         self._callbacks.append(callback)
 
+    def unsubscribe(self, callback: AggregatedQuoteCallback) -> None:
+        try:
+            self._callbacks.remove(callback)
+        except ValueError:
+            pass
+
     # ── Lifecycle ──────────────────────────────────────────────────────────────
 
     async def start(self) -> None:

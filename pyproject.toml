@@ -27,6 +27,11 @@ dev = [
     "pytest-asyncio>=0.24",
     "ruff>=0.4",
 ]
+ml = [
+    "scipy>=1.12",
+    "scikit-learn>=1.4",
+    "statsmodels>=0.14",
+]
 ib = [
     "ib_insync>=0.9",
 ]
