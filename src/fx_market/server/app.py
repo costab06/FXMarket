@@ -314,7 +314,7 @@ class StrategyStartIn(BaseModel):
 
 
 @app.post("/api/strategies/{name}/start", tags=["strategies"])
-def start_strategy(name: str, body: StrategyStartIn = StrategyStartIn()):
+async def start_strategy(name: str, body: StrategyStartIn = StrategyStartIn()):
     try:
         _strategy_mgr.start(name, pair=body.pair, quantity=body.quantity)
         runner = _strategy_mgr._runners.get(name)
