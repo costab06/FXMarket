@@ -32,6 +32,15 @@ enormously — from ~5/s during the London/NY overlap to <1/s overnight — so
 tau=50 means anything from 10 seconds to over a minute depending on the time
 of day.  See ewma_cross_theta.py for a version that corrects for this.
 
+Crossover detection
+~~~~~~~~~~~~~~~~~~~
+The strategy stores the sign of (fast - slow) from the previous call in
+self._prev_sign and fires when it changes.  This is important in backtesting:
+the engine skips ticks between evaluation calls, so comparing fast[-1] to
+fast[-2] (adjacent buffer elements) would miss nearly every crossover.
+Comparing against the value from the last call works correctly whether
+on_tick is called on every tick (live) or every N ticks (backtest).
+
 warmup_hours = 24  ->  the runner pre-loads ~24 h of ticks from Dukascopy
                        into the history buffer before starting to trade.
 max_history  = 5000 -> keeps the 5 000 most recent ticks in memory.
@@ -48,6 +57,9 @@ class EWMACross(StrategyBase):
     # Minimum ticks required before trading
     MIN_TICKS = 500
 
+    def on_start(self):
+        self._prev_sign = 0   # sign of (fast - slow) at previous call; 0 = uninitialised
+
     def on_tick(self, ctx: StrategyContext):
         if len(ctx.mid) < self.MIN_TICKS:
             return None
@@ -61,15 +73,21 @@ class EWMACross(StrategyBase):
         vol = ewma_volatility(r, tau=30, dt=1.0)
         high_vol = vol[-1] > 0.10   # skip signals in very high volatility
 
-        if high_vol:
+        diff = fast[-1] - slow[-1]
+        sign = 1 if diff > 0 else (-1 if diff < 0 else 0)
+
+        prev  = self._prev_sign
+        self._prev_sign = sign
+
+        if high_vol or prev == 0:
             return None
 
-        # Crossover: fast rises above slow -> buy
-        if fast[-2] <= slow[-2] and fast[-1] > slow[-1]:
+        # Crossover: fast rose above slow since last call -> buy
+        if prev < 0 and sign > 0:
             return "buy"
 
-        # Crossunder: fast falls below slow -> sell
-        if fast[-2] >= slow[-2] and fast[-1] < slow[-1]:
+        # Crossunder: fast fell below slow since last call -> sell
+        if prev > 0 and sign < 0:
             return "sell"
 
         return None
@@ -132,6 +150,9 @@ class EWMACrossTheta(StrategyBase):
     warmup_hours = 48
     max_history  = 20_000
 
+    def on_start(self):
+        self._prev_sign = 0   # sign of (fast - slow) at previous call; 0 = uninitialised
+
     def on_tick(self, ctx: StrategyContext):
         if len(ctx.mid) < 500:
             return None
@@ -159,10 +180,18 @@ class EWMACrossTheta(StrategyBase):
         if vol[-1] > 0.10:
             return None
 
-        # Crossover signals
-        if fast[-2] <= slow[-2] and fast[-1] > slow[-1]:
+        # Stateful crossover: compare sign now vs sign at previous call
+        diff = fast[-1] - slow[-1]
+        sign = 1 if diff > 0 else (-1 if diff < 0 else 0)
+        prev = self._prev_sign
+        self._prev_sign = sign
+
+        if prev == 0:
+            return None
+
+        if prev < 0 and sign > 0:
             return "buy"
-        if fast[-2] >= slow[-2] and fast[-1] < slow[-1]:
+        if prev > 0 and sign < 0:
             return "sell"
 
         return None

@@ -212,6 +212,12 @@ async def _execute(
 
     result["progress"] = f"Replaying {len(ticks):,} ticks…"
 
+    # Give the strategy a chance to initialise any instance state (e.g. _prev_sign)
+    try:
+        strategy.on_start()
+    except Exception:
+        pass
+
     # ── 4. Replay ─────────────────────────────────────────────────────────────
     step       = max(1, len(ticks) // MAX_EVALUATIONS)
     chart_step = max(1, len(ticks) // MAX_CHART_POINTS)
