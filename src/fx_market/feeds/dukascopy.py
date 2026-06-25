@@ -55,7 +55,10 @@ UTC = timezone.utc
 
 _HISTORY_BASE = "https://datafeed.dukascopy.com/datafeed"
 _TICK_SIZE = 20           # bytes per tick record
-_CONCURRENT_REQUESTS = 4  # max parallel hour fetches
+_CONCURRENT_REQUESTS = 3  # max parallel hour fetches
+_RETRY_STATUSES = {429, 503}
+_MAX_RETRIES = 5
+_RETRY_BASE_DELAY = 2.0   # seconds; doubles on each retry
 
 # Price scaling: Dukascopy stores prices as integers
 _POINT_VALUE: dict[str, int] = {
@@ -105,6 +108,8 @@ class DukascopyHistory:
     def __init__(self, timeout: float = 30.0, max_concurrent: int = _CONCURRENT_REQUESTS) -> None:
         self._timeout = timeout
         self._semaphore = asyncio.Semaphore(max_concurrent)
+        # Single shared client for connection pooling across all requests
+        self._client = httpx.AsyncClient(timeout=self._timeout)
 
     async def fetch_hour(self, pair: str, dt: datetime) -> list[Quote]:
         """Fetch one hour of tick data for ``pair`` starting at ``dt`` (UTC).
@@ -127,19 +132,15 @@ class DukascopyHistory:
         url = _history_url(pair, dt)
 
         async with self._semaphore:
-            try:
-                async with httpx.AsyncClient(timeout=self._timeout) as client:
-                    resp = await client.get(url)
-            except httpx.RequestError as exc:
-                logger.warning("Dukascopy request failed %s: %s", url, exc)
-                return []
+            resp = await self._fetch_with_retry(url)
 
+        if resp is None:
+            return []
         if resp.status_code == 404:
             return []         # no data for this hour (weekend / holiday)
         if resp.status_code != 200:
             logger.warning("Dukascopy HTTP %d for %s", resp.status_code, url)
             return []
-
         if not resp.content:
             return []
 
@@ -150,6 +151,29 @@ class DukascopyHistory:
             return []
 
         return _parse_ticks(raw, pair, dt)
+
+    async def _fetch_with_retry(self, url: str):
+        """GET ``url`` with exponential backoff retry on 429/503."""
+        delay = _RETRY_BASE_DELAY
+        for attempt in range(_MAX_RETRIES):
+            try:
+                resp = await self._client.get(url)
+            except httpx.RequestError as exc:
+                logger.warning("Dukascopy request error %s: %s", url, exc)
+                return None
+
+            if resp.status_code not in _RETRY_STATUSES:
+                return resp
+
+            logger.warning(
+                "Dukascopy HTTP %d for %s — retry %d/%d in %.1fs",
+                resp.status_code, url, attempt + 1, _MAX_RETRIES, delay,
+            )
+            await asyncio.sleep(delay)
+            delay *= 2
+
+        logger.error("Dukascopy: giving up on %s after %d retries", url, _MAX_RETRIES)
+        return None
 
     async def fetch_range(
         self,
@@ -191,6 +215,7 @@ class DukascopyHistory:
         logger.info("Dukascopy: fetching %d hour file(s) for %s", len(hours), pair)
 
         results = await asyncio.gather(*[self.fetch_hour(pair, h) for h in hours])
+        await self._client.aclose()
 
         all_ticks: list[Quote] = []
         for batch in results:
