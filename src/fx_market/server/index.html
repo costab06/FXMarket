@@ -417,9 +417,9 @@ tr:last-child td { border-bottom: none; }
           <div class="panel-body">
             <table>
               <thead><tr>
-                <th style="text-align:left">Pair</th><th>Qty</th><th>Avg Entry</th><th>Mid</th><th>Unrealized P&L</th>
+                <th style="text-align:left">Pair</th><th>Qty</th><th>Avg Entry</th><th>Mid</th><th>Unrealized P&L</th><th>Realized P&L</th>
               </tr></thead>
-              <tbody id="positions-body"><tr><td colspan="5" class="empty-msg">No open positions</td></tr></tbody>
+              <tbody id="positions-body"><tr><td colspan="6" class="empty-msg">No open positions</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -785,16 +785,17 @@ function showResult(msg, ok) {
 async function refreshPositions() {
   const positions = await fetch(`${BASE}/api/positions`).then(r => r.json()).catch(() => []);
   const tbody = document.getElementById('positions-body');
-  if (!positions.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty-msg">No open positions</td></tr>'; return; }
+  if (!positions.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty-msg">No open positions</td></tr>'; return; }
   tbody.innerHTML = positions.map(p => {
     const dec = p.pair.includes('JPY') ? 3 : 5;
-    const qtyClass = p.qty > 0 ? 'pos-long' : 'pos-short';
-    const qtyLabel = p.qty > 0 ? `+${p.qty.toLocaleString()}` : p.qty.toLocaleString();
+    const qtyClass = p.qty > 0 ? 'pos-long' : p.qty < 0 ? 'pos-short' : '';
+    const qtyLabel = p.qty > 0 ? `+${p.qty.toLocaleString()}` : p.qty === 0 ? '—' : p.qty.toLocaleString();
     const mid = p.current_mid != null ? p.current_mid.toFixed(dec) : '—';
-    const pnl = p.unrealized_pnl != null
+    const unrealized = p.unrealized_pnl != null
       ? `<span class="${p.unrealized_pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">${p.unrealized_pnl >= 0 ? '+' : ''}${p.unrealized_pnl.toFixed(2)}</span>`
       : '—';
-    return `<tr><td>${p.pair}</td><td class="${qtyClass}">${qtyLabel}</td><td>${p.avg_price.toFixed(dec)}</td><td>${mid}</td><td>${pnl}</td></tr>`;
+    const realized = `<span class="${p.realized_pnl > 0 ? 'pnl-pos' : p.realized_pnl < 0 ? 'pnl-neg' : ''}">${p.realized_pnl >= 0 ? '+' : ''}${p.realized_pnl.toFixed(2)}</span>`;
+    return `<tr><td>${p.pair}</td><td class="${qtyClass}">${qtyLabel}</td><td>${p.qty !== 0 ? p.avg_price.toFixed(dec) : '—'}</td><td>${mid}</td><td>${unrealized}</td><td>${realized}</td></tr>`;
   }).join('');
 }
 

@@ -72,6 +72,7 @@ _sor = SmartOrderRouter(
 
 # pair -> {"qty": float, "avg_price": float}
 _positions: dict[str, dict] = {}
+_realized_pnl: dict[str, float] = {}   # pair → cumulative realized P&L in quote currency
 _fills_log: list[dict] = []
 
 
@@ -92,6 +93,15 @@ def _update_position(fill: Fill) -> None:
     pos = _positions.setdefault(pair, {"qty": 0.0, "avg_price": 0.0})
     old_qty = pos["qty"]
     new_qty = old_qty + delta
+
+    # Realize P&L on the portion of the position being closed
+    if old_qty != 0.0 and (old_qty > 0) != (delta > 0):
+        closing_qty = min(abs(old_qty), abs(delta))
+        if old_qty > 0:
+            realized = (fill.fill_price - pos["avg_price"]) * closing_qty
+        else:
+            realized = (pos["avg_price"] - fill.fill_price) * closing_qty
+        _realized_pnl[pair] = _realized_pnl.get(pair, 0.0) + realized
 
     if new_qty == 0.0:
         pos["qty"] = 0.0
@@ -247,19 +257,23 @@ async def place_order(req: OrderIn):
 
 @app.get("/api/positions", tags=["positions"])
 def get_positions():
+    all_pairs = sorted(set(_positions) | set(_realized_pnl))
     rows = []
-    for pair, pos in _positions.items():
-        if pos["qty"] == 0.0:
+    for pair in all_pairs:
+        pos = _positions.get(pair, {"qty": 0.0, "avg_price": 0.0})
+        realized = _realized_pnl.get(pair, 0.0)
+        if pos["qty"] == 0.0 and realized == 0.0:
             continue
         aq = _agg.best_quote(pair)
         mid = aq.mid if aq else None
-        pnl = (mid - pos["avg_price"]) * pos["qty"] if mid is not None else None
+        unrealized = (mid - pos["avg_price"]) * pos["qty"] if mid is not None and pos["qty"] != 0.0 else None
         rows.append({
             "pair": pair,
             "qty": pos["qty"],
             "avg_price": pos["avg_price"],
             "current_mid": mid,
-            "unrealized_pnl": round(pnl, 2) if pnl is not None else None,
+            "unrealized_pnl": round(unrealized, 2) if unrealized is not None else None,
+            "realized_pnl": round(realized, 2),
         })
     return rows
 
