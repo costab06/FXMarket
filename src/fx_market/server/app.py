@@ -425,7 +425,8 @@ def get_library():
 
 # ── Backtest ──────────────────────────────────────────────────────────────────
 
-_backtest_results: dict[str, dict] = {}   # id → result dict
+_backtest_results: dict[str, dict] = {}        # id → result dict
+_backtest_tasks:  dict[str, asyncio.Task] = {}  # id → running task
 
 
 class BacktestRequest(BaseModel):
@@ -454,18 +455,31 @@ async def start_backtest(req: BacktestRequest):
     _backtest_results[run_id] = {"id": run_id, "status": "running", "progress": "Starting…"}
 
     async def _task():
-        result = await run_backtest(
-            strategy=strategy,
-            start=req.start.astimezone(UTC),
-            end=req.end.astimezone(UTC),
-            domestic_currency=req.domestic_currency.upper(),
-            capital=req.capital,
-        )
-        result["id"] = run_id
-        _backtest_results[run_id] = result
+        try:
+            result = await run_backtest(
+                strategy=strategy,
+                start=req.start.astimezone(UTC),
+                end=req.end.astimezone(UTC),
+                domestic_currency=req.domestic_currency.upper(),
+                capital=req.capital,
+            )
+            result["id"] = run_id
+            _backtest_results[run_id] = result
+        except asyncio.CancelledError:
+            _backtest_results[run_id].update({"status": "aborted", "progress": "Aborted"})
 
-    asyncio.create_task(_task())
+    task = asyncio.create_task(_task())
+    _backtest_tasks[run_id] = task
     return {"id": run_id}
+
+
+@app.post("/api/backtest/{run_id}/abort", tags=["backtest"])
+async def abort_backtest(run_id: str):
+    task = _backtest_tasks.get(run_id)
+    if task is None or task.done():
+        raise HTTPException(status_code=404, detail="No running backtest with that id")
+    task.cancel()
+    return {"aborted": run_id}
 
 
 @app.get("/api/backtest/{run_id}", tags=["backtest"])

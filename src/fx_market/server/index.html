@@ -565,6 +565,7 @@ tr:last-child td { border-bottom: none; }
         <input type="number" id="bt-capital" value="10000" min="100" step="100" style="width:90px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:4px;font-family:inherit;font-size:12px;">
       </div>
       <button class="bt-run-btn" id="bt-run-btn" onclick="runBacktest()">Run Backtest</button>
+      <button class="bt-run-btn" id="bt-abort-btn" onclick="abortBacktest()" style="display:none;background:#b62324;">Abort</button>
       <span class="bt-status" id="bt-status"></span>
     </div>
 
@@ -1245,6 +1246,7 @@ function useInEditor(importLine, fnName) {
 // ═══════════════════════════════════════════════════════════ BACKTEST
 
 let btPollTimer = null;
+let btRunId = null;
 let btPriceChart = null, btEquityChart = null;
 
 async function initBacktest() {
@@ -1279,6 +1281,7 @@ async function runBacktest() {
 
   const btn = document.getElementById('bt-run-btn');
   btn.disabled = true;
+  document.getElementById('bt-abort-btn').style.display = '';
   setBtStatus('running', 'Starting…');
   document.getElementById('bt-body').innerHTML = '<div class="bt-empty">Running backtest…</div>';
 
@@ -1294,10 +1297,12 @@ async function runBacktest() {
     });
     if (!resp.ok) { const e = await resp.json(); throw new Error(e.detail); }
     const { id } = await resp.json();
+    btRunId = id;
     pollBacktest(id);
   } catch (e) {
     setBtStatus('error', e.message);
     btn.disabled = false;
+    document.getElementById('bt-abort-btn').style.display = 'none';
   }
 }
 
@@ -1313,15 +1318,33 @@ function pollBacktest(id) {
 
     clearInterval(btPollTimer);
     btPollTimer = null;
+    btRunId = null;
     document.getElementById('bt-run-btn').disabled = false;
+    document.getElementById('bt-abort-btn').style.display = 'none';
 
     if (result.status === 'error') {
       document.getElementById('bt-body').innerHTML =
         `<div class="bt-empty" style="color:var(--red);white-space:pre-wrap">${escHtml(result.error)}</div>`;
       return;
     }
+    if (result.status === 'aborted') {
+      document.getElementById('bt-body').innerHTML =
+        `<div class="bt-empty" style="color:var(--muted)">Backtest aborted.</div>`;
+      return;
+    }
     renderBacktestResult(result);
   }, 1500);
+}
+
+async function abortBacktest() {
+  if (!btRunId) return;
+  document.getElementById('bt-abort-btn').disabled = true;
+  try {
+    await fetch(`${BASE}/api/backtest/${btRunId}/abort`, { method: 'POST' });
+    setBtStatus('running', 'Aborting…');
+  } catch (e) {
+    document.getElementById('bt-abort-btn').disabled = false;
+  }
 }
 
 function setBtStatus(cls, msg) {

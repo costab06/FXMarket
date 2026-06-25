@@ -214,8 +214,10 @@ class DukascopyHistory:
 
         logger.info("Dukascopy: fetching %d hour file(s) for %s", len(hours), pair)
 
-        results = await asyncio.gather(*[self.fetch_hour(pair, h) for h in hours])
-        await self._client.aclose()
+        try:
+            results = await asyncio.gather(*[self.fetch_hour(pair, h) for h in hours])
+        finally:
+            await self._client.aclose()
 
         all_ticks: list[Quote] = []
         for batch in results:
